@@ -1,4 +1,7 @@
+import asyncio
+
 from aiogram import Router, F
+from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter, TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -16,6 +19,10 @@ def is_admin(user_id: int) -> bool:
 
 
 class RefMessageState(StatesGroup):
+    waiting_for_content = State()
+
+
+class BroadcastState(StatesGroup):
     waiting_for_content = State()
 
 
@@ -112,3 +119,49 @@ async def save_refmessage_text(message: Message, state: FSMContext):
     await db.set_ref_message("text", None, message.text)
     await state.clear()
     await message.answer("✅ Referal xabari (matn) saqlandi.")
+
+
+@router.message(Command("xabar"))
+async def cmd_xabar(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    await state.set_state(BroadcastState.waiting_for_content)
+    await message.answer(
+        "Barchaga yuboriladigan xabarni jo'nating.\n\n"
+        "Matn, rasm, video yoki boshqa istalgan turdagi xabar bo'lishi mumkin — "
+        "u qanday yuborilsa, hammaga xuddi shunday yetkaziladi."
+    )
+
+
+@router.message(BroadcastState.waiting_for_content)
+async def do_broadcast(message: Message, state: FSMContext):
+    await state.clear()
+
+    async with db.pool().acquire() as conn:
+        rows = await conn.fetch("SELECT user_id FROM users WHERE is_verified=TRUE")
+    user_ids = [row["user_id"] for row in rows]
+
+    status = await message.answer(f"⏳ Yuborilmoqda... (0/{len(user_ids)})")
+    sent, failed = 0, 0
+
+    for i, user_id in enumerate(user_ids, start=1):
+        try:
+            await message.copy_to(user_id)
+            sent += 1
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(e.retry_after)
+            try:
+                await message.copy_to(user_id)
+                sent += 1
+            except (TelegramForbiddenError, TelegramBadRequest):
+                failed += 1
+        except (TelegramForbiddenError, TelegramBadRequest):
+            failed += 1  # user blocked the bot / deleted account / etc.
+
+        if i % 25 == 0:
+            await status.edit_text(f"⏳ Yuborilmoqda... ({i}/{len(user_ids)})")
+        await asyncio.sleep(0.05)  # stay under Telegram's rate limits
+
+    await status.edit_text(
+        f"✅ Xabar yuborildi.\nMuvaffaqiyatli: {sent}\nXato (bloklangan/o'chirilgan): {failed}"
+    )
