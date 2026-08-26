@@ -28,16 +28,16 @@ PORT = int(os.environ.get("PORT", 10000))
 # see README.md "How to get a private channel's chat_id".
 CHANNELS = [
     {
-        "title": "VLL Premium",
+        "title": "VLL Prem",
         "url": "https://t.me/VLLPrem",
         "username": "VLLPrem",   # public -> checked via @username
         "chat_id": None,
     },
     {
-        "title": "VLL Premium Chat",
+        "title": "PLay 2048",
         "url": "https://t.me/+tEUbmGCU-jUxZWYy",
         "username": None,
-        "chat_id": None,  # <-- FILL THIS IN, see README (private channel)
+        "chat_id": -1003927357817,  # <-- FILL THIS IN, see README (private channel)
     },
 ]
 
